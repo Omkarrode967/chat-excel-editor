@@ -9,7 +9,14 @@ import os
 from groq import Groq, RateLimitError
 import matplotlib.pyplot as plt
 import io
-from PIL import Image  # Pillow is required for handling image data
+from PIL import Image  
+import re
+import tensorflow as tf
+from dotenv import load_dotenv
+
+load_dotenv()
+
+my_api_key = os.getenv("MY_API_KEY")
 
 # Initialize Groq Client
 def initialize_groq_client(api_key):
@@ -107,18 +114,11 @@ def install_module(module_name):
         raise
 
 
-import io
-import pandas as pd
-import re
-import traceback
-import streamlit as st  # Assuming Streamlit is used
-
-
 def execute_code_on_excel(code, input_df, client, user_query):
     if not code:
         return "No valid Python code block found.", None
 
-    local_env = {'pd': pd, 'df': input_df, 'plt': plt}
+    local_env = {'pd': pd, 'df': input_df, 'plt': plt , 'tf' : tf}
 
     try:
         # Initialize output buffer before execution
@@ -129,7 +129,7 @@ def execute_code_on_excel(code, input_df, client, user_query):
         exec(f"import sys\nsys.stdout = output_buffer\n{code}\nsys.stdout = sys.__stdout__", {}, local_env)
 
         # Get the output from the buffer
-        output_buffer.seek(0)  # Move cursor to the start of the buffer
+        output_buffer.seek(0)  
         executed_output = (
             output_buffer.getvalue().decode('utf-8').strip() if isinstance(output_buffer, io.BytesIO)
             else output_buffer.getvalue().strip()
@@ -213,16 +213,16 @@ def main():
             
             try:
                 if file_extension == "xlsx":
-                    df = pd.read_excel(uploaded_file)
+                    st.session_state.modified_df = pd.read_excel(uploaded_file)
                 elif file_extension == "csv":
                     df = pd.read_csv(uploaded_file)  # Load CSV
                     # Save it as an Excel file in memory
                     excel_buffer = BytesIO()
                     df.to_excel(excel_buffer, index=False, engine='openpyxl')
                     excel_buffer.seek(0)  # Reset buffer position
-                    st.session_state.excel_file = excel_buffer  # Store Excel version in session state
+                    st.session_state.modified_df = excel_buffer  # Store Excel version in session state
 
-                st.session_state.modified_df = df
+                
                 st.success(f"Loaded file: {uploaded_file.name}")
             except Exception as e:
                 st.error(f"Error loading file: {str(e)}")
@@ -231,16 +231,14 @@ def main():
     if isinstance(st.session_state.modified_df, pd.DataFrame):
         st.subheader("Original Excel Data")
         st.dataframe(st.session_state.modified_df)
-    else:
-        st.warning("No valid DataFrame found. Please upload an Excel file.")
-
+    
     # User query for modifications
     user_query = st.chat_input("Describe the modification you'd like to make:")
     if user_query:
         st.session_state.chat_history.append(("user", user_query))
 
         # Initialize Groq Client with environment variable API key
-        client = initialize_groq_client("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")
+        client = initialize_groq_client(my_api_key)
         if client:
             # Generate response
             sample_data = st.session_state.modified_df.head(5).to_string()
@@ -267,6 +265,7 @@ def main():
                 # Check the result type and handle accordingly
                 if isinstance(result, tuple):
                     executed_output , output_object, img_buffers  = result
+                    print(type(executed_output))
 
                     if isinstance(output_object, pd.DataFrame) and not output_object.empty:
                         # Update modified DataFrame
@@ -287,16 +286,15 @@ def main():
                         output.seek(0)
                         st.download_button(
                             label="Download modified Excel",
-                            data=output,
+                            data=st.session_state.modified_df,
                             file_name="modified_data.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                      # Handle Image Buffer (for graphs)
-                    # Handle Image Buffers (for graphs)
                     if img_buffers:
                         for idx, img_buffer in enumerate(img_buffers):
                             st.subheader(f"Generated Plot {idx+1}")
-                            img_buffer.seek(0)  # Ensure buffer is at the start
+                            img_buffer.seek(0)
                             st.image(img_buffer, caption=f"Generated Plot {idx+1}", use_column_width=True)
 
                             # Provide a download button for the plot image
@@ -307,15 +305,13 @@ def main():
                                 mime="image/png"
                             )
 
+                            st.dataframe(st.session_state.modified_df)
+
                         # Display executed output
                         if output_object:
                             st.subheader("Executed Output")
                             st.code(executed_output, language="text")
-
-
-
-
-
+                            st.dataframe(st.session_state.modified_df)
 
                     else:
                         # Handle other output types
@@ -330,14 +326,27 @@ def main():
                         # Display executed output
                         st.subheader("Executed Output")
                         st.code(executed_output, language="text")
+                        st.dataframe(st.session_state.modified_df)
                 else:
                     error_message, detailed_traceback = result
                     st.error(error_message)
                     if detailed_traceback:
                         st.text("Traceback:")
                         st.code(detailed_traceback, language="text")
+                    st.dataframe(st.session_state.modified_df)    
 
-                
+            # Centralized Download Button Logic
+        if isinstance(st.session_state.modified_df, pd.DataFrame):
+            output = BytesIO()
+            st.session_state.modified_df.to_excel(output, index=False, engine='openpyxl')
+            output.seek(0)  # Reset stream position to the beginning
+
+            st.download_button(
+                label="Download modified Excel",
+                data=output.getvalue(),  # Use the content of the buffer
+                file_name="modified_data.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
         else:
             st.error("Could not initialize Groq client. Please check your API key.")
