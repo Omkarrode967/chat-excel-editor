@@ -213,6 +213,14 @@ def main():
             try:
                 if file_extension == "xlsx":
                     st.session_state.modified_df = pd.read_excel(uploaded_file)
+                    current_directory = os.path.dirname(os.path.abspath(__file__))
+
+# Specify the path to save the file
+                    file_path = os.path.join(current_directory, uploaded_file.name)
+
+# Write the uploaded file to the directory
+                    with open(file_path, "wb") as file:
+                        file.write(uploaded_file.read())
                 elif file_extension == "csv":
                     df = pd.read_csv(uploaded_file)  # Load CSV
                     # Save it as an Excel file in memory
