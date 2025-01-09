@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import io
 from PIL import Image  
 import re
-import tensorflow as tf
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -118,7 +117,7 @@ def execute_code_on_excel(code, input_df, client, user_query):
     if not code:
         return "No valid Python code block found.", None
 
-    local_env = {'pd': pd, 'df': input_df, 'plt': plt , 'tf' : tf}
+    local_env = {'pd': pd, 'df': input_df, 'plt': plt}
 
     try:
         # Initialize output buffer before execution
