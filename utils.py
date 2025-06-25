@@ -194,7 +194,88 @@ def execute_code_on_excel(code, input_df, client, user_query):
 
 # Main Application
 def main():
-    st.title("Excel Modification Assistant")
+    # --- Custom CSS for modern look ---
+    st.markdown(
+        """
+        <style>
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%) !important;
+        }
+        .main-header {
+            background: #4F8BF9;
+            color: white;
+            border-radius: 18px;
+            padding: 1.5rem 2rem 1rem 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 24px rgba(79,139,249,0.12);
+            text-align: center;
+        }
+        .subtitle {
+            color: #4F8BF9;
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        .stButton>button {
+            background: linear-gradient(90deg, #4F8BF9 0%, #6DD5FA 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 2rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(79,139,249,0.08);
+            transition: 0.2s;
+        }
+        .stButton>button:hover {
+            background: linear-gradient(90deg, #6DD5FA 0%, #4F8BF9 100%);
+            color: #fff;
+            transform: translateY(-2px) scale(1.03);
+        }
+        .stDataFrame, .stDataEditor {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(79,139,249,0.07);
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stSidebar {
+            background: #e3eafc !important;
+            border-radius: 0 18px 18px 0;
+            box-shadow: 2px 0 12px rgba(79,139,249,0.07);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # --- Sidebar ---
+    st.sidebar.image("https://img.icons8.com/color/96/000000/ms-excel.png", width=64)
+    st.sidebar.title("About Chat Excel Editor")
+    st.sidebar.info(
+        """
+        **Chat Excel Editor**
+        
+        - Upload and edit Excel or CSV files
+        - View and edit any sheet
+        - Download your changes
+        
+        _All processing is local and secure._
+        """
+    )
+    st.sidebar.markdown("---")
+    st.sidebar.write("Made with ❤️ by Omkar Rode")
+
+    # --- Main Header ---
+    st.markdown(
+        """
+        <div class='main-header'>
+            <h1 style='margin-bottom: 0.2em;'>📊 Chat Excel Sheet Editor</h1>
+            <div class='subtitle'>A beautiful, interactive way to edit your Excel files</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Initialize session state for data and chat history
     if 'modified_df' not in st.session_state:
@@ -247,81 +328,59 @@ def main():
         # Initialize Groq Client with environment variable API key
         client = initialize_groq_client(my_api_key)
         if client:
-            # Generate response
-            sample_data = st.session_state.modified_df.head(5).to_string()
+            if isinstance(st.session_state.modified_df, pd.DataFrame):
+                sample_data = st.session_state.modified_df.head(5).to_string()
+            else:
+                sample_data = "No data loaded."
             complete_query = f"Sample Data:\n{sample_data}\n\nModification: {user_query}"
             response = socratic_assistant_response(client, complete_query)
-            print(response)
-            # Extract code and execute
             pure_code = extract_python_code(response)
             if not pure_code:
                 st.error("No valid Python code was generated. Please refine your query.")
             else:
                 st.session_state.chat_history.append(("assistant", pure_code))
-
-                # Display chat history
                 for sender, message in st.session_state.chat_history:
                     if sender == "user":
                         st.chat_message("User").write(message)
                     else:
                         st.chat_message("Assistant").code(message, language="python")
-
-                # Execute Python code
                 result = execute_code_on_excel(client=client, user_query=user_query, code=pure_code, input_df=st.session_state.modified_df)
-
-                # Check the result type and handle accordingly
                 if isinstance(result, tuple):
                     executed_output , output_object, img_buffers  = result
-                    print(type(executed_output))
-
                     if isinstance(output_object, pd.DataFrame) and not output_object.empty:
-                        # Update modified DataFrame
                         st.session_state.modified_df = output_object
-
-                        # Display executed output
                         if executed_output:
                             st.subheader("Executed Output")
                             st.code(executed_output, language="text")
-
-                        # Display modified DataFrame
                         st.subheader("Modified Excel Data")
                         st.dataframe(st.session_state.modified_df)
-
-                        # Download button
-                        output = io.BytesIO()
-                        output_object.to_excel(output, index=False)
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            output_object.to_excel(writer, index=False)
                         output.seek(0)
                         st.download_button(
-                            label="Download modified Excel",
-                            data=st.session_state.modified_df,
+                            label="⬇️ Download modified Excel",
+                            data=output.getvalue(),
                             file_name="modified_data.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
-                     # Handle Image Buffer (for graphs)
                     if img_buffers:
                         for idx, img_buffer in enumerate(img_buffers):
                             st.subheader(f"Generated Plot {idx+1}")
                             img_buffer.seek(0)
                             st.image(img_buffer, caption=f"Generated Plot {idx+1}", use_column_width=True)
-
-                            # Provide a download button for the plot image
                             st.download_button(
                                 label=f"Download Plot {idx+1} as PNG",
                                 data=img_buffer,
                                 file_name=f"generated_plot_{idx+1}.png",
                                 mime="image/png"
                             )
-
                             st.dataframe(st.session_state.modified_df)
-
-                        # Display executed output
-                        if output_object:
+                        if output_object is not None:
                             st.subheader("Executed Output")
                             st.code(executed_output, language="text")
                             st.dataframe(st.session_state.modified_df)
-
                     else:
-                        # Handle other output types
                         st.subheader("Output Object")
                         if isinstance(output_object, (dict, list)):
                             st.json(output_object)
@@ -329,8 +388,6 @@ def main():
                             st.text(output_object.getvalue())
                         else:
                             st.text(str(output_object))
-
-                        # Display executed output
                         st.subheader("Executed Output")
                         st.code(executed_output, language="text")
                         st.dataframe(st.session_state.modified_df)
@@ -340,21 +397,7 @@ def main():
                     if detailed_traceback:
                         st.text("Traceback:")
                         st.code(detailed_traceback, language="text")
-                    st.dataframe(st.session_state.modified_df)    
-
-            # Centralized Download Button Logic
-        if isinstance(st.session_state.modified_df, pd.DataFrame):
-            output = BytesIO()
-            st.session_state.modified_df.to_excel(output, index=False, engine='openpyxl')
-            output.seek(0)  # Reset stream position to the beginning
-
-            st.download_button(
-                label="Download modified Excel",
-                data=output.getvalue(),  # Use the content of the buffer
-                file_name="modified_data.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
+                    st.dataframe(st.session_state.modified_df)
         else:
             st.error("Could not initialize Groq client. Please check your API key.")
     else:
